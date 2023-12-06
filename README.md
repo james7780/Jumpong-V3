@@ -4,7 +4,7 @@ JumPong V3 for Atari 5200
 
 By James Higgs 2023
 
-Here is a simple version of Pong, written for the Atari 5200 using cc65.
+Here is a simple version of Pong, written for the Atari 5200 using cc65 V2.19.
 
 It's converted from the 5200Basic version (Jumpong V2), which was written in 2003. This in turn was an upgraded version of the original JumPong I wrote using DASM 6502 assembler in 2002.
 
