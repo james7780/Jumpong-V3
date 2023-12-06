@@ -1,4 +1,3 @@
-# Jumpong-V3
 JumPong V3 for Atari 5200
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -24,4 +23,3 @@ POSSIBLE FUTURE ENHANCEMENTS:
 - Player can put some spin on the ball
 - "crumbling" bat when you lose a point
 - Better sound effects
-
