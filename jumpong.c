@@ -2,10 +2,8 @@
 // Copyright James Higgs 2023
 
 // TODO:
-// - Win sound
-// - Ball speedup sound
-// 3. Player can speed up ball by holding fire (?)
-
+// 1. Player can speed up ball by holding fire (?)
+// CPU "player" (AI)
 
 // 5200 bIOS IRQ vectors:
 // FC03   ; Immediate IRQ  ($200)
@@ -33,6 +31,10 @@
 
 #define POKE(a,b)		*(unsigned char *)(a) = (b)
 #define PEEK(a)			*(unsigned char *)(a)
+
+// Bat top and bottom Y-limit (in doubled scanlines)
+#define BAT_LIMIT_TOP			19
+#define BAT_LIMIT_BOTTOM	92
 
 // Display list (copy to $1300)
 const char displayList[] = {
@@ -301,16 +303,16 @@ unsigned char p2y;
 char p1dy;
 char p2dy;
 unsigned char ballX;
-int ballY;							// replaces BALLYLO and BALLYHI
+int ballY;											// replaces BALLYLO and BALLYHI
 char ballDX;
-int ballDY;							// replaces BALLDYLO and BALLDYHI
+int ballDY;											// replaces BALLDYLO and BALLDYHI
 
-// PL1 and PL2 scroes
+// PL1 and PL2 scores
 unsigned char scoreP1;
 unsigned char scoreP2;
-char server;
-char T1;
-char controller;
+char server = 0;								// Who is serving (0 or 1)
+char controller = 0;						// Which type of controller (joystick [0] or paddle [1])
+char player2Type = 0;						// Player 2 human [0] or CPU [1]
 unsigned char ballSpeed;
 unsigned char bounces;
 
@@ -512,6 +514,46 @@ void ClearPlayArea()
 	memset((void *)(SCREEN_ADDR + 40), 0, 480);
 }
 
+// CPU control (player 2)
+void MoveCPU()
+{
+	unsigned char d;
+	// The CPU paddle AI follows this strategy:
+	//
+	// If the ball is moving away then do nothing
+	// Otherwise, predict where the ball will meet the paddle’s edge of the court.
+	// If we have a prediction then move up or down to meet it.
+	//
+	// The CPU "skill" level is tied to:
+	// - A delay CPU reaction time (frames) after you (human player) have hit the ball
+	// - The speed at which the CPU bat is allowed to move
+	// - Random error factor in reaction time and speed
+	// - How long the CPU is tied to it's up/down movement decision (no of frames)
+
+	// if (ballDX < 0)			// " Result of comparison is always false"
+	// 	return;
+	if (ballDX & 0x80)		// ballDX < 0 (ball moving left)
+		return;
+
+	// React yet?
+	if (ballX < 100)			// TODO - tie to skill level, also add a random factor
+		return;
+
+	// Move paddle towards ball
+	d = ((ballY >> 8) - (p2y + 12));
+	if (d < 128)
+		{
+		if (p2y < BAT_LIMIT_BOTTOM)
+			p2y++;
+		}
+	else
+		{
+		if (p2y > BAT_LIMIT_TOP)
+		p2y--;
+		}
+
+}
+
 //  --------------------------------------------------------------
 //  PLAYER CONTROL
 //  --------------------------------------------------------------
@@ -534,25 +576,33 @@ void MovePlayers()
 		p1y += p1dy;
 
 		// Latch to top or bottom of bounds
-		if (p1y < 19)
-			p1y = 19;
-		else if (p1y > 92)
-			p1y = 92;
+		if (p1y < BAT_LIMIT_TOP)
+			p1y = BAT_LIMIT_TOP;
+		else if (p1y > BAT_LIMIT_BOTTOM)
+			p1y = BAT_LIMIT_BOTTOM;
 
 		// Move player 2
-		p2dy = 0;
-		potY = PEEK(sPOT3);					// JS 1 Y axis
-		if (potY < 64)
-			p2dy = -3;
-		else if (potY > 192)
-			p2dy = 3;
-		p2y += p2dy;
+		if (0 == player2Type)
+			{
+			p2dy = 0;
+			potY = PEEK(sPOT3);					// JS 1 Y axis
+			if (potY < 64)
+				p2dy = -3;
+			else if (potY > 192)
+				p2dy = 3;
+			p2y += p2dy;
 
-		// Latch to top or bottom of bounds
-		if (p2y < 19)
-			p2y = 19;
-		else if (p2y > 92)
-			p2y = 92;
+			// Latch to top or bottom of bounds
+			if (p2y < BAT_LIMIT_TOP)
+				p2y = BAT_LIMIT_TOP;
+			else if (p2y > BAT_LIMIT_BOTTOM)
+				p2y = BAT_LIMIT_BOTTOM;
+			}
+		else
+			{
+			// Apply CPU AI for P2
+			MoveCPU();	
+			}
 		}
 	else
 		{
@@ -567,12 +617,20 @@ void MovePlayers()
 		p1y = (potY >> 1);
 
 		// Move player 2
-		potY = PEEK(sPOT1);
-		if (potY > 185)
-			potY = 185;
-		if (potY < 38)
-		 potY = 38;
-		p2y = (potY >> 1);
+		if (0 == player2Type)
+			{
+			potY = PEEK(sPOT1);
+			if (potY > 185)
+				potY = 185;
+			if (potY < 38)
+			potY = 38;
+			p2y = (potY >> 1);
+			}
+		else
+			{
+			// Apply CPU AI for P2
+			MoveCPU();
+			}
 		}
 }
 
@@ -630,6 +688,7 @@ bounces++;
 void DoTitleScreen()
 {
 	char key;
+	unsigned char debounce;
 
 	// Switch off audio
 	POKE(AUDC1, 0);				// vol = 0, no 'volume only' mode, no distortion
@@ -644,13 +703,23 @@ void DoTitleScreen()
 	p2y = 50; p2dy = -1;
 
 	// Show which controller
-	print(2, 9, "SELECT INPUT */#\0");
-	print(2, 15, "THEN PRESS START\0");
+	print(3, 9, "SELECT INPUT *\0");
+
 	if (0 == controller)
 		print(5, 11, "-JOYSTICK-\0");
 	else
 		print(5, 11, "--PADDLE--\0");
 
+	print(4, 14, "SELECT P2 #\0");
+
+	if (0 == player2Type)
+		print(5, 16, "--HUMAN--\0");
+	else
+		print(5, 16, "---CPU---\0");
+
+	print(2, 19, "THEN PRESS START\0");
+
+	debounce = 0;
 	while (1)
 		{
 		// Wait for next frame
@@ -662,33 +731,57 @@ void DoTitleScreen()
 
 		// Animate PL1
 		p1y += p1dy;
-		if (19 == p1y)
+		if (BAT_LIMIT_TOP == p1y)
 			p1dy = 1;
-		else if (92 == p1y)
+		else if (BAT_LIMIT_BOTTOM == p1y)
 			p1dy = -1;
 
 		// Animate PL2
 		p2y += p2dy;
-		if (19 == p2y)
+		if (BAT_LIMIT_TOP == p2y)
 			p2dy = 1;
-		else if (92 == p2y)
+		else if (BAT_LIMIT_BOTTOM == p2y)
 			p2dy = -1;
 
 		// Detect controller type change
 		// ' *** emu bug: KBCODE doesn't update unless a key is pressed !!! ***
-		key = inkey() & 0x0F;
-		if (0x07 == key)						// Star button (F5 in Jum52)
+		if (debounce)
 			{
-			controller = 0;
-			print(5, 11, "-JOYSTICK-\0");
+			debounce--;
 			}
-		else if (0x03 == key)				// Hash button (F6 in Jum52)
+		else
 			{
-			controller = 1;
-			print(5, 11, "--PADDLE--\0");
+			debounce = 10;
+			key = inkey() & 0x0F;
+			if (0x07 == key)						// Star button (F5 in Jum52)
+				{
+				if (0 == controller)
+					{
+					controller = 1;
+					print(5, 11, "--PADDLE--\0");
+					}
+				else
+					{
+					controller = 0;
+					print(5, 11, "-JOYSTICK-\0");
+					}
+				}
+			else if (0x03 == key)				// Hash button (F6 in Jum52)
+				{
+				if (0 == player2Type)
+					{
+					player2Type = 1;
+					print(5, 16, "---CPU---\0");
+					}
+				else
+					{
+					player2Type = 0;
+					print(5, 16, "--HUMAN--\0");
+					}
+				}
+			else if (0x09 == key)				// Start buttin (F1 in Jum52)
+				break;
 			}
-		else if (0x09 == key)				// Start buttin (F1 in Jum52)
-			break;
 		}
 }
 
@@ -720,13 +813,30 @@ void ShowWinMessage()
 // Wait for current server to serve
 void WaitForServe()
 {
+	unsigned char timer;
+
 	// Wait for player to press trigger to release ball
+	timer = 150;			// almost 3 secs
 	while (1)
 		{
-    if (0 == server && 0 == PEEK(TRIG0))
-			break;
-    if (1 == server && 0 == PEEK(TRIG1))
-			break;
+    if (0 == server)
+			{
+			if (0 == PEEK(TRIG0))
+				break;
+			}
+    else	// server = 1
+			{
+			if (0 == player2Type)
+				{
+				if (0 == PEEK(TRIG1))
+					break;
+				}
+			else	// playerType = 1
+				{
+				if (0 == timer)
+					break;
+				}
+			}
 
 		WaitVSync();
 		ClearSprites();
@@ -734,6 +844,7 @@ void WaitForServe()
 		DrawPL2Sprite();
 		MovePlayers();		
 		UpdateSound();			// This needed to finish playing the "miss" sound from previous point scored
+		timer--;
 		}
 
 	// Start ball acoording to server
@@ -800,7 +911,7 @@ void DoGame()
 			ballY = ballY + ballDY;
 		
 			// Check for bounce against top and bottom walls
-			if ((ballY >> 8) < 19 || (ballY >> 8) > 114)
+			if ((ballY >> 8) < BAT_LIMIT_TOP || (ballY >> 8) > 114)
 				{
 				// Bounce
 				ballDY = -ballDY;
@@ -876,8 +987,9 @@ int main (void)
 	// Init graphics
 	InitGFX();
 
-	// Initial controller = joystick
-	controller = 0;
+	// // Init variables
+	// controller = 0;										// controller = joystick
+	// player2Type = 0;									// P2 is human	
 
 	while (1)
 		{
