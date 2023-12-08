@@ -10,9 +10,11 @@ It's converted from the 5200Basic version (Jumpong V2), which was written in 200
 
 It's still closer to a demo than a full game.
 
-Use the * and # keys on the 5200 controller to choose between joystick and paddle control.
+Use the * key on the 5200 controller to choose between joystick and paddle control.
+Use the # key on the 5200 controller to choose between human and CPU (AI) opponent.
 
 NOT TESTED ON A REAL 5200!
+Keyboard read code needs some attention too.
 
 The source code is included in case you want to fix any bugs, get it running on a real 5200, or improve it. If you do, please notify me.
 
@@ -21,6 +23,7 @@ Have fun!
 - Jum
 
 POSSIBLE FUTURE ENHANCEMENTS:
+- [BUSY] Player 2 "AI"
 - Player can put some spin on the ball
 - "crumbling" bat when you lose a point
 - Better sound effects
