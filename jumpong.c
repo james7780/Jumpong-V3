@@ -400,13 +400,13 @@ void keypad(unsigned char i)
 }
 
 // Read a key from the currently selected keypad
-char inkey()
+unsigned char inkey()
 {
 	// PRINTOUT("LDA", "KEY" + COMMENT(3))
 	// PRINTOUT("LDX", "#$FF")
 	// PRINTOUT("STX", "KEY")
-	char c;
-	c = PEEK(KBCODE);
+	unsigned char c;
+	c = (PEEK(KBCODE) >> 1) & 0x0F;					// Only bits 1 through 4 of KBCODE are valid
 	POKE(KBCODE, 0xFF);				// when writing, this reg is known as STIMER
 
 	return c;
@@ -687,7 +687,8 @@ bounces++;
 // Show the title screen + animation
 void DoTitleScreen()
 {
-	char key;
+	unsigned char key;
+	unsigned char lastkey;
 	unsigned char debounce;
 
 	// Switch off audio
@@ -720,6 +721,8 @@ void DoTitleScreen()
 	print(2, 19, "THEN PRESS START\0");
 
 	debounce = 0;
+	key = 0;
+	lastkey = 0;
 	while (1)
 		{
 		// Wait for next frame
@@ -745,15 +748,11 @@ void DoTitleScreen()
 
 		// Detect controller type change
 		// ' *** emu bug: KBCODE doesn't update unless a key is pressed !!! ***
-		if (debounce)
-			{
-			debounce--;
-			}
-		else
+		key = inkey();
+		if (key != lastkey && 0 == debounce)
 			{
 			debounce = 10;
-			key = inkey() & 0x0F;
-			if (0x07 == key)						// Star button (F5 in Jum52)
+			if (0x03 == key)						// "raw" keycode for Star button (F5 in Jum52)
 				{
 				if (0 == controller)
 					{
@@ -766,7 +765,7 @@ void DoTitleScreen()
 					print(5, 11, "-JOYSTICK-\0");
 					}
 				}
-			else if (0x03 == key)				// Hash button (F6 in Jum52)
+			else if (0x01 == key)				// "raw" keycode for Hash button (F6 in Jum52)
 				{
 				if (0 == player2Type)
 					{
@@ -779,9 +778,13 @@ void DoTitleScreen()
 					print(5, 16, "--HUMAN--\0");
 					}
 				}
-			else if (0x09 == key)				// Start buttin (F1 in Jum52)
+			else if (0x0C == key)				// "raw" keycode for Start buttin (F1 in Jum52)
 				break;
 			}
+
+		lastkey = key;
+		if (debounce)
+			debounce--;
 		}
 }
 
