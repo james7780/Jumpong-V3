@@ -319,6 +319,25 @@ unsigned char bounces;
 // Audio: Current envelope pointer (pointer into current envelope pos)
 unsigned char *envelopePtr = 0;
 
+// Set up the playfield and player colours
+void SetGameColours()
+{
+	// Set playfield colours
+	POKE(sCOLOR0, 0x1E);				// Color 0 shadow
+	POKE(sCOLOR1, 0xFE);				// Color 1 shadow
+	POKE(sCOLOR2, 0xCE);				// Color 2 shadow
+	POKE(sCOLOR3, 0xBE);				// Color 3 shadow
+
+	// Setup background colour
+	POKE(sCOLBK, 0x02);
+
+	// Set up players colours
+	POKE(sCOLPM0, 0x4A);
+	POKE(sCOLPM1, 0xBA);
+	// Set up ball colour - ball is missile 2 so it can have a different colour to the bats
+	POKE(sCOLPM2, 0xFE);
+}
+
 // Set up graphics
 void InitGFX()
 {
@@ -347,20 +366,8 @@ void InitGFX()
 	// Want normal playfield width ($02) + M DMA ($04) + P DMA ($08) + PM haf-rez ($10 = 0) + DL DMA ($20)
 	POKE(sDMACTL, 0x2E);  // normal playfield, 2-scanline sprites (double-height sprites)
 
-	// Set playfield colours
-	POKE(sCOLOR0, 0x1D);				// Color 0 shadow
-	POKE(sCOLOR1, 0xFE);				// Color 1 shadow
-	POKE(sCOLOR2, 0xCE);				// Color 2 shadow
-	POKE(sCOLOR3, 0xBE);				// Color 3 shadow
-
-	// Setup background colour
-	POKE(sCOLBK, 0x02);
-
-	// Set up players colours
-	POKE(sCOLPM0, 0x4A);
-	POKE(sCOLPM1, 0xBA);
-	// Set up ball colour - ball is missile 2 so it can have a different colour to the bats
-	POKE(sCOLPM2, 0xFE);
+	// Set PF and PM colours
+	SetGameColours();
 
 	// Set player X positions
 	POKE(HPOSP0, 49);
@@ -427,10 +434,10 @@ void WaitVSyncWithColourBars()
 	// if (vcount > 117)					// redundant!
 	// 	return;
 
-	rtcLO = PEEK(RTC_LO);
+	rtcLO = PEEK(RTC_LO); // >> 1;
 	while (vcount < 117)			// 118		NB: Use < or we may "miss" VCOUNT = 117
 		{
-		c = (vcount + rtcLO);
+		c = vcount + rtcLO;
 		// c = (c & 0x0F) | 0x70;
 		POKE(WSYNC, 0);								// WSYNC *before* BG colour set, otherwise we migth be changing colour half way thru the line
 		POKE(COLBK, c);
@@ -439,7 +446,7 @@ void WaitVSyncWithColourBars()
 		}
 
 	// POKE(COLBK, 0xFF);					// debug
-	// POKE(WSYNC, 0);
+	POKE(WSYNC, 0);								// Avoid changin colour halfway across the line
 	POKE(COLBK, 0x00);
 }
 
@@ -877,6 +884,9 @@ void DoGame()
 	// Player has pressed START to get here, so play a chime
 	envelopePtr = (unsigned char *)newBallEnv;
 
+	// Restore our game colours in case we went into ATTRACT mode
+	SetGameColours();
+
 	// Clear middle of screen of text
 	ClearPlayArea();
 
@@ -901,13 +911,13 @@ void DoGame()
 		// Inner game loop
 		while (1)
 			{
-			// Clear collision regs
+			POKE(ATTRACT_TIMER, 0);				// Avoid attract colours kicking in
 			POKE(HITCLR, 0);							// Clear collision regs
-			WaitVSync();
-			DrawPL1Sprite();
+			WaitVSync();									// Wait for VSync
+			DrawPL1Sprite();							// Draw bats and ball
 			DrawPL2Sprite();
 			DrawBall();
-			MovePlayers();		
+			MovePlayers();								// Do player jpystick/paddle and/or CPU "AI" movement
 
 			// Move ball horizontally and vertically
 			ballX = ballX + ballDX;
@@ -980,19 +990,8 @@ void DoGame()
 // ============================================================================
 int main (void)
 {
-//	// Disable interrupts
-//	ANTIC.nmien = 0x00;
-//	ANTIC.nmires = 0x00;
-
-	// DIsable interrupts
-//	SEI();								// "Set interrupt disable"
-	
 	// Init graphics
 	InitGFX();
-
-	// // Init variables
-	// controller = 0;										// controller = joystick
-	// player2Type = 0;									// P2 is human	
 
 	while (1)
 		{
